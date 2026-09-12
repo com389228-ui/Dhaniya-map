@@ -1,6 +1,6 @@
 {
   "name": "Distance Tracker",
-  "description": "Real-time tracker for aerial and land distance between locations with Live GPS, 100% Fixed Geodesic distance mode, and gesture quick actions.",
+  "description": "Real-time tracker for aerial and street-level road distance with interactive Google Maps view, turn-by-turn gali route visualization, travel modes (car/walking/bike), and manual Lat/Lon entry.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

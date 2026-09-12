@@ -87,6 +87,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -97,8 +100,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.CompassRadarView
 import com.example.ui.components.DestinationPickerSheet
+import com.example.ui.components.DirectCoordinatesDialog
+import com.example.ui.components.GoogleMapsStyleView
+import com.example.ui.components.RoadDetourCalibrationCard
 import com.example.util.DistanceUnit
 import com.example.util.GeoUtils
+import com.example.util.RoadDetourProfile
+import com.example.util.RouteResult
+import com.example.util.TravelMode
 import com.example.viewmodel.DistanceViewModel
 import java.util.Locale
 
@@ -112,6 +121,7 @@ fun DistanceTrackerScreen(
     val context = LocalContext.current
     var showPickerSheet by remember { mutableStateOf(false) }
     var isPickingForOrigin by remember { mutableStateOf(false) }
+    var showDirectCoordsDialog by remember { mutableStateOf(false) }
 
     val copyReport: () -> Unit = {
         val calc = uiState.calculation
@@ -128,7 +138,7 @@ fun DistanceTrackerScreen(
                 append("• Point A (आरंभ): $originName\n")
                 append("• Point B (मंज़िल): $destName\n")
                 append("• हवाई दूरी (Aerial / सीधी): ${GeoUtils.formatDistanceValue(calc.aerialDistanceMeters, uiState.selectedUnit)} ${uiState.selectedUnit.shortLabel} (${calc.aerialDistanceMeters.toInt()}m)\n")
-                append("• ज़मीनी दूरी (Road / सड़क): ${GeoUtils.formatDistanceValue(calc.landDistanceMeters, uiState.selectedUnit)} ${uiState.selectedUnit.shortLabel} (~1.28x Detour)\n")
+                append("• ज़मीनी दूरी (Road / सड़क): ${GeoUtils.formatDistanceValue(calc.landDistanceMeters, uiState.selectedUnit)} ${uiState.selectedUnit.shortLabel} (Google Maps Match ~${String.format(Locale.US, "%.2fx", uiState.customRoadFactor)})\n")
                 append("• दिशा (Bearing): ${String.format(Locale.getDefault(), "%.0f°", calc.bearingDegrees)} (${calc.cardinalDirection})\n")
                 append("• अनुमानित यात्रा समय: कार ~${calc.driveTimeMinutes}m | फ्लाइट ~${calc.flightTimeMinutes}m | ट्रेन ~${calc.trainTimeMinutes}m")
             }
@@ -439,9 +449,12 @@ fun DistanceTrackerScreen(
             // 2. QUICK / GESTURE ACTION RIBBON
             QuickActionsRibbon(
                 isFixedMode = uiState.isFixedDistanceMode,
+                isMapViewVisible = uiState.isMapViewVisible,
                 onToggleFixMode = { viewModel.toggleFixedDistanceMode() },
                 onLockPointA = { viewModel.lockOriginToCurrentLocation() },
                 onSwapPoints = { viewModel.swapOriginAndDestination() },
+                onOpenLatLonInput = { showDirectCoordsDialog = true },
+                onToggleMapView = { viewModel.toggleMapViewVisibility() },
                 onCycleUnit = { viewModel.cycleUnit() },
                 onCopyReport = copyReport
             )
@@ -464,7 +477,8 @@ fun DistanceTrackerScreen(
                     showPickerSheet = true
                 },
                 onSwapClick = { viewModel.swapOriginAndDestination() },
-                onLockCurrentLocationAsOrigin = { viewModel.lockOriginToCurrentLocation() }
+                onLockCurrentLocationAsOrigin = { viewModel.lockOriginToCurrentLocation() },
+                onDirectLatLonClick = { showDirectCoordsDialog = true }
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -513,9 +527,61 @@ fun DistanceTrackerScreen(
                     bearingDegrees = calc.bearingDegrees,
                     speedKmH = calc.speedKmH,
                     isFixedMode = uiState.isFixedDistanceMode,
+                    customRoadFactor = uiState.customRoadFactor,
+                    realRouteResult = uiState.realRouteResult,
                     onToggleFixMode = { viewModel.toggleFixedDistanceMode() },
                     onCycleUnit = { viewModel.cycleUnit() },
                     onCopyDistance = copyReport
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Interactive Google Maps Style View with street route
+                AnimatedVisibility(visible = uiState.isMapViewVisible) {
+                    Column {
+                        GoogleMapsStyleView(
+                            origin = if (uiState.isFixedDistanceMode) uiState.fixedOrigin else uiState.currentLocation?.let {
+                                com.example.location.SearchResult(
+                                    name = "वर्तमान GPS स्थान",
+                                    address = uiState.currentAddress,
+                                    latitude = it.latitude,
+                                    longitude = it.longitude
+                                )
+                            },
+                            destination = uiState.destination,
+                            aerialDistanceMeters = calc.aerialDistanceMeters,
+                            landDistanceMeters = calc.landDistanceMeters,
+                            selectedUnit = uiState.selectedUnit,
+                            travelMode = uiState.travelMode,
+                            realRouteResult = uiState.realRouteResult,
+                            isFetchingRoute = uiState.isFetchingRoute,
+                            onSelectTravelMode = { viewModel.setTravelMode(it) },
+                            onRefreshRoute = {
+                                val fixedOrig = uiState.fixedOrigin
+                                val currentLoc = uiState.currentLocation
+                                val dest = uiState.destination
+                                val originLat = if (uiState.isFixedDistanceMode && fixedOrig != null) fixedOrig.latitude else currentLoc?.latitude
+                                val originLng = if (uiState.isFixedDistanceMode && fixedOrig != null) fixedOrig.longitude else currentLoc?.longitude
+                                val destLat = dest?.latitude
+                                val destLng = dest?.longitude
+                                if (originLat != null && originLng != null && destLat != null && destLng != null) {
+                                    viewModel.fetchStreetRoute(originLat, originLng, destLat, destLng)
+                                }
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                    }
+                }
+
+                // Road Detour Calibration Card (Google Maps Match)
+                RoadDetourCalibrationCard(
+                    currentProfile = uiState.roadDetourProfile,
+                    customFactor = uiState.customRoadFactor,
+                    aerialDistanceMeters = calc.aerialDistanceMeters,
+                    landDistanceMeters = calc.landDistanceMeters,
+                    selectedUnit = uiState.selectedUnit,
+                    onSelectProfile = { viewModel.setRoadDetourProfile(it) },
+                    onCustomFactorChange = { viewModel.setCustomRoadFactor(it) }
                 )
 
                 Spacer(modifier = Modifier.height(18.dp))
@@ -702,14 +768,36 @@ fun DistanceTrackerScreen(
                 "Hawai aur zameeni duri track karne ke liye sthaan chunein"
         )
     }
+
+    if (showDirectCoordsDialog) {
+        DirectCoordinatesDialog(
+            currentLocation = uiState.currentLocation,
+            fixedOrigin = uiState.fixedOrigin,
+            destination = uiState.destination,
+            onDismiss = { showDirectCoordsDialog = false },
+            onSubmit = { originName, originLat, originLng, destName, destLat, destLng ->
+                viewModel.setBothCoordinates(
+                    originName = originName,
+                    originLat = originLat,
+                    originLng = originLng,
+                    destName = destName,
+                    destLat = destLat,
+                    destLng = destLng
+                )
+            }
+        )
+    }
 }
 
 @Composable
 fun QuickActionsRibbon(
     isFixedMode: Boolean,
+    isMapViewVisible: Boolean,
     onToggleFixMode: () -> Unit,
     onLockPointA: () -> Unit,
     onSwapPoints: () -> Unit,
+    onOpenLatLonInput: () -> Unit,
+    onToggleMapView: () -> Unit,
     onCycleUnit: () -> Unit,
     onCopyReport: () -> Unit,
     modifier: Modifier = Modifier
@@ -757,7 +845,7 @@ fun QuickActionsRibbon(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 // Action 1: Toggle Fix Mode
                 QuickActionButton(
@@ -769,27 +857,37 @@ fun QuickActionsRibbon(
                     modifier = Modifier.weight(1f)
                 )
 
-                // Action 2: Lock Current Location as Point A
+                // Action 2: Direct Lat / Lon Input Dialog
                 QuickActionButton(
-                    icon = Icons.Default.PushPin,
-                    label = "Point A लॉक",
+                    icon = Icons.Default.Language,
+                    label = "Lat/Lon",
                     highlight = false,
-                    activeColor = Color(0xFF00E676),
-                    onClick = onLockPointA,
+                    activeColor = Color(0xFF00E5FF),
+                    onClick = onOpenLatLonInput,
                     modifier = Modifier.weight(1f)
                 )
 
-                // Action 3: Swap A <-> B
+                // Action 3: Toggle Map View
+                QuickActionButton(
+                    icon = Icons.Default.Map,
+                    label = if (isMapViewVisible) "मैप छुपाएं" else "मैप दृश्य",
+                    highlight = isMapViewVisible,
+                    activeColor = Color(0xFF4DD0E1),
+                    onClick = onToggleMapView,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Action 4: Swap A <-> B
                 QuickActionButton(
                     icon = Icons.Default.SwapVert,
-                    label = "A ⇄ B स्वैप",
+                    label = "स्वैप",
                     highlight = false,
-                    activeColor = Color(0xFF00E5FF),
+                    activeColor = Color(0xFFFF8A80),
                     onClick = onSwapPoints,
                     modifier = Modifier.weight(1f)
                 )
 
-                // Action 4: Cycle Unit
+                // Action 5: Unit
                 QuickActionButton(
                     icon = Icons.Default.Refresh,
                     label = "यूनिट",
@@ -799,7 +897,7 @@ fun QuickActionsRibbon(
                     modifier = Modifier.weight(1f)
                 )
 
-                // Action 5: Copy Report
+                // Action 6: Copy Report
                 QuickActionButton(
                     icon = Icons.Default.ContentCopy,
                     label = "कॉपी",
@@ -872,7 +970,8 @@ fun RouteLocationsCard(
     onChangeOriginClick: () -> Unit,
     onChangeDestinationClick: () -> Unit,
     onSwapClick: () -> Unit,
-    onLockCurrentLocationAsOrigin: () -> Unit
+    onLockCurrentLocationAsOrigin: () -> Unit,
+    onDirectLatLonClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1068,6 +1167,35 @@ fun RouteLocationsCard(
                     Text("बदलें", color = Color(0xFF00E5FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Direct Lat / Lon Input Action Button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF162235))
+                    .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                    .clickable(onClick = onDirectLatLonClick)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Language,
+                    contentDescription = null,
+                    tint = Color(0xFF00E5FF),
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "🌐 सीधे Lat / Lon (अक्षांश व देशांतर) टाइप या पेस्ट करें",
+                    color = Color(0xFF00E5FF),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -1081,6 +1209,8 @@ fun DualDistanceHero(
     bearingDegrees: Float,
     speedKmH: Float,
     isFixedMode: Boolean,
+    customRoadFactor: Double = 1.12,
+    realRouteResult: RouteResult? = null,
     onToggleFixMode: () -> Unit,
     onCycleUnit: () -> Unit,
     onCopyDistance: () -> Unit
@@ -1251,7 +1381,7 @@ fun DualDistanceHero(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f, fill = false)) {
                         Box(
                             modifier = Modifier
                                 .size(30.dp)
@@ -1268,30 +1398,48 @@ fun DualDistanceHero(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "ZAMEENI / ROAD DURI",
+                                text = if (realRouteResult != null) "सड़क व गली मार्ग" else "GOOGLE MAPS SADAK DURI",
                                 color = Color(0xFFFFB300),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                letterSpacing = 1.sp
+                                letterSpacing = 0.5.sp
                             )
                             Text(
-                                text = "Sadak Marg Anumaan (~1.28x Circuity Factor)",
+                                text = if (realRouteResult != null) "वाया: ${realRouteResult.summaryRoad}" else "Google Maps Anusaar (${String.format(Locale.US, "%.2fx", customRoadFactor)})",
                                 color = Color(0xFFFFE082),
-                                fontSize = 10.sp
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
                     }
-                    Box(
-                        modifier = Modifier
-                            .background(Color(0xFF2C1E0A), RoundedCornerShape(20.dp))
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text = "+28% detour",
-                            color = Color(0xFFFFD54F),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    if (realRouteResult != null) {
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF1E3A8A), RoundedCornerShape(20.dp))
+                                .padding(horizontal = 7.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "🎯 सटीक गली मार्ग",
+                                color = Color(0xFF93C5FD),
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        val detourPct = ((customRoadFactor - 1.0) * 100).toInt()
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF2C1E0A), RoundedCornerShape(20.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "+$detourPct% Maps match",
+                                color = Color(0xFFFFD54F),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
 
@@ -1315,6 +1463,23 @@ fun DualDistanceHero(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                if (realRouteResult != null && realRouteResult.steps.isNotEmpty()) {
+                    Text(
+                        text = "📍 ${realRouteResult.steps.size} मोड़ व गलियों के हिसाब से दूरी",
+                        color = Color(0xFFFFD54F),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                } else {
+                    Text(
+                        text = "सड़क घुमाव: +${((customRoadFactor - 1.0) * 100).toInt()}% अतिरिक्त दूरी",
+                        color = Color(0xFFFFE082),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }

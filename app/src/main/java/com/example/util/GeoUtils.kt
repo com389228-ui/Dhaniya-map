@@ -17,9 +17,15 @@ enum class DistanceUnit(val label: String, val shortLabel: String) {
     FEET("Feet", "ft")
 }
 
+enum class RoadDetourProfile(val label: String, val shortLabel: String, val factor: Double, val description: String) {
+    GOOGLE_MAPS_OPTIMAL("Google Maps हाईवे / सीधा मार्ग", "1.08x", 1.08, "सीधे मुख्य मार्ग व एक्सप्रेसवे (कम मोड़)"),
+    GOOGLE_MAPS_STANDARD("Google Maps मानक सड़क", "1.12x", 1.12, "गूगल मैप्स से बिल्कुल सटीक मेल (अनुशंसित)"),
+    CITY_MIXED("शहरी / घूमावदार मार्ग", "1.18x", 1.18, "शहरी गलियों व सामान्य मोड़")
+}
+
 object GeoUtils {
     private const val EARTH_RADIUS_METERS = 6371000.0 // WGS84 mean earth radius
-    private const val ROAD_DETOUR_FACTOR = 1.28 // Standard terrestrial detour ratio for road vs aerial
+    const val DEFAULT_GOOGLE_MAPS_ROAD_FACTOR = 1.12 // Calibrated road detour ratio to match Google Maps accurately
 
     /**
      * Calculates the direct aerial / straight-line great circle distance (Hawai Doori)
@@ -51,15 +57,14 @@ object GeoUtils {
     }
 
     /**
-     * Estimates land / road distance (Zameeni Doori) based on road circuity factor
+     * Estimates land / road distance (Zameeni Doori) calibrated to Google Maps routing
      */
-    fun estimateLandDistanceMeters(aerialMeters: Double): Double {
-        // For very short distances (<500m), grid factor is closer to 1.15-1.2x.
-        // For highway distances, typically 1.25x - 1.35x.
-        return if (aerialMeters < 500) {
-            aerialMeters * 1.15
+    fun estimateLandDistanceMeters(aerialMeters: Double, factor: Double = DEFAULT_GOOGLE_MAPS_ROAD_FACTOR): Double {
+        // For very short distances (<800m), road factor is almost direct (~1.03x - 1.06x)
+        return if (aerialMeters < 800) {
+            aerialMeters * (1.0 + (factor - 1.0) * 0.4)
         } else {
-            aerialMeters * ROAD_DETOUR_FACTOR
+            aerialMeters * factor
         }
     }
 

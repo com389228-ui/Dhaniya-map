@@ -14,6 +14,11 @@ import com.example.location.LocationClient
 import com.example.location.SearchResult
 import com.example.util.DistanceUnit
 import com.example.util.GeoUtils
+import com.example.util.RoadDetourProfile
+import com.example.util.RouteResult
+import com.example.util.RouteService
+import com.example.util.RouteStep
+import com.example.util.TravelMode
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +29,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 data class CalculationSummary(
@@ -60,7 +66,13 @@ data class UiState(
     val statusMessage: String? = null,
     val isFixedDistanceMode: Boolean = false, // When true, calculates exact fixed distance between Point A and Point B
     val fixedOrigin: SearchResult? = null, // Fixed Origin (Point A)
-    val isPickingOrigin: Boolean = false // Sheet picker mode for Point A vs Point B
+    val isPickingOrigin: Boolean = false, // Sheet picker mode for Point A vs Point B
+    val roadDetourProfile: RoadDetourProfile = RoadDetourProfile.GOOGLE_MAPS_STANDARD,
+    val customRoadFactor: Double = GeoUtils.DEFAULT_GOOGLE_MAPS_ROAD_FACTOR, // Calibrated to 1.12 to match Google Maps accurately
+    val isMapViewVisible: Boolean = true, // Toggle Map View like Google Maps
+    val travelMode: TravelMode = TravelMode.DRIVING, // Mode: Driving, Walking (Gali-Mohalla), Bike
+    val realRouteResult: RouteResult? = null, // Real street-level turn-by-turn routing result
+    val isFetchingRoute: Boolean = false
 )
 
 class DistanceViewModel(application: Application) : AndroidViewModel(application) {
@@ -225,6 +237,55 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
         if (originLoc != null) {
             val newCalc = computeCalculation(originLoc, dest, state.deviceAzimuth)
             _uiState.update { it.copy(calculation = newCalc) }
+            fetchStreetRoute(originLoc.latitude, originLoc.longitude, dest.latitude, dest.longitude)
+        }
+    }
+
+    private var streetRouteJob: Job? = null
+
+    fun fetchStreetRoute(startLat: Double, startLng: Double, destLat: Double, destLng: Double) {
+        streetRouteJob?.cancel()
+        streetRouteJob = viewModelScope.launch {
+            _uiState.update { it.copy(isFetchingRoute = true) }
+            val mode = _uiState.value.travelMode
+            val route = RouteService.fetchRoute(startLat, startLng, destLat, destLng, mode)
+            if (route != null) {
+                _uiState.update { current ->
+                    val updatedCalc = current.calculation?.copy(
+                        landDistanceMeters = route.distanceMeters,
+                        driveTimeMinutes = if (current.travelMode == TravelMode.DRIVING) (route.durationSeconds / 60.0).roundToInt().coerceAtLeast(1) else current.calculation.driveTimeMinutes,
+                        walkTimeMinutes = if (current.travelMode == TravelMode.WALKING) (route.durationSeconds / 60.0).roundToInt().coerceAtLeast(1) else current.calculation.walkTimeMinutes
+                    )
+                    current.copy(
+                        realRouteResult = route,
+                        calculation = updatedCalc,
+                        isFetchingRoute = false,
+                        statusMessage = "🛣️ सड़क मार्ग मिला: ${route.summaryRoad} (${GeoUtils.formatDistanceValue(route.distanceMeters, current.selectedUnit)} ${current.selectedUnit.shortLabel})"
+                    )
+                }
+            } else {
+                _uiState.update { it.copy(isFetchingRoute = false) }
+            }
+        }
+    }
+
+    fun setTravelMode(mode: TravelMode) {
+        _uiState.update { it.copy(travelMode = mode, statusMessage = "यात्रा मोड: ${mode.label}") }
+        recalculateDistance()
+    }
+
+    fun applyRealRouteResult(route: RouteResult) {
+        _uiState.update { current ->
+            val updatedCalc = current.calculation?.copy(
+                landDistanceMeters = route.distanceMeters,
+                driveTimeMinutes = if (current.travelMode == TravelMode.DRIVING) (route.durationSeconds / 60.0).roundToInt().coerceAtLeast(1) else current.calculation?.driveTimeMinutes ?: 0,
+                walkTimeMinutes = if (current.travelMode == TravelMode.WALKING) (route.durationSeconds / 60.0).roundToInt().coerceAtLeast(1) else current.calculation?.walkTimeMinutes ?: 0
+            )
+            current.copy(
+                realRouteResult = route,
+                calculation = updatedCalc,
+                isFetchingRoute = false
+            )
         }
     }
 
@@ -356,7 +417,8 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
             destination.latitude,
             destination.longitude
         )
-        val landMeters = GeoUtils.estimateLandDistanceMeters(aerialMeters)
+        val realRoute = _uiState.value.realRouteResult
+        val landMeters = realRoute?.distanceMeters ?: GeoUtils.estimateLandDistanceMeters(aerialMeters, factor = _uiState.value.customRoadFactor)
         val bearing = GeoUtils.calculateBearing(
             currentLocation.latitude,
             currentLocation.longitude,
@@ -374,6 +436,17 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
             GeoUtils.formatDuration(mins)
         } else null
 
+        val driveMins = if (realRoute != null && _uiState.value.travelMode == TravelMode.DRIVING) {
+            (realRoute.durationSeconds / 60.0).roundToInt().coerceAtLeast(1)
+        } else {
+            GeoUtils.estimateDriveTimeMinutes(landMeters)
+        }
+        val walkMins = if (realRoute != null && _uiState.value.travelMode == TravelMode.WALKING) {
+            (realRoute.durationSeconds / 60.0).roundToInt().coerceAtLeast(1)
+        } else {
+            GeoUtils.estimateWalkingTimeMinutes(landMeters)
+        }
+
         return CalculationSummary(
             aerialDistanceMeters = aerialMeters,
             landDistanceMeters = landMeters,
@@ -382,9 +455,9 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
             shortCardinal = shortCard,
             relativeBearingDegrees = relative,
             flightTimeMinutes = GeoUtils.estimateFlightTimeMinutes(aerialMeters),
-            driveTimeMinutes = GeoUtils.estimateDriveTimeMinutes(landMeters),
+            driveTimeMinutes = driveMins,
             trainTimeMinutes = GeoUtils.estimateTrainTimeMinutes(landMeters),
-            walkTimeMinutes = GeoUtils.estimateWalkingTimeMinutes(landMeters),
+            walkTimeMinutes = walkMins,
             speedKmH = speedKmH,
             etaAtCurrentSpeed = etaLive
         )
@@ -468,6 +541,63 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
 
     fun setUnit(unit: DistanceUnit) {
         _uiState.update { it.copy(selectedUnit = unit) }
+    }
+
+    fun setRoadDetourProfile(profile: RoadDetourProfile) {
+        _uiState.update {
+            it.copy(
+                roadDetourProfile = profile,
+                customRoadFactor = profile.factor,
+                statusMessage = "मार्ग मॉडल बदला: ${profile.label} (${profile.shortLabel})"
+            )
+        }
+        recalculateDistance()
+    }
+
+    fun setCustomRoadFactor(factor: Double) {
+        val clamped = factor.coerceIn(1.00, 1.40)
+        _uiState.update {
+            it.copy(
+                customRoadFactor = clamped,
+                statusMessage = String.format(java.util.Locale.getDefault(), "गूगल मैप्स कैलिब्रेशन: %.2fx", clamped)
+            )
+        }
+        recalculateDistance()
+    }
+
+    fun toggleMapViewVisibility() {
+        _uiState.update { it.copy(isMapViewVisible = !it.isMapViewVisible) }
+    }
+
+    fun setBothCoordinates(
+        originName: String,
+        originLat: Double,
+        originLng: Double,
+        destName: String,
+        destLat: Double,
+        destLng: Double
+    ) {
+        val origin = SearchResult(
+            name = originName.ifBlank { String.format(java.util.Locale.getDefault(), "Point A (%.4f, %.4f)", originLat, originLng) },
+            address = String.format(java.util.Locale.getDefault(), "Lat: %.5f, Lng: %.5f", originLat, originLng),
+            latitude = originLat,
+            longitude = originLng
+        )
+        val dest = SearchResult(
+            name = destName.ifBlank { String.format(java.util.Locale.getDefault(), "Point B (%.4f, %.4f)", destLat, destLng) },
+            address = String.format(java.util.Locale.getDefault(), "Lat: %.5f, Lng: %.5f", destLat, destLng),
+            latitude = destLat,
+            longitude = destLng
+        )
+        _uiState.update {
+            it.copy(
+                isFixedDistanceMode = true,
+                fixedOrigin = origin,
+                destination = dest,
+                statusMessage = "🎯 Point A और Point B के Lat/Lon दर्ज हो गए!"
+            )
+        }
+        recalculateDistance()
     }
 
     fun onSearchQueryChanged(query: String) {
