@@ -131,7 +131,30 @@ fun GoogleMapsStyleView(
 
     val geoJsonString = realRouteResult?.geometryGeoJson ?: "null"
 
-    // Generate HTML for Leaflet Map with real road routing
+    // Calculate Estimated Time of Arrival (ETA)
+    val etaString = remember(realRouteResult, landDistanceMeters, travelMode) {
+        val seconds = realRouteResult?.durationSeconds ?: run {
+            val speedKmh = when (travelMode) {
+                TravelMode.DRIVING -> 42.0
+                TravelMode.WALKING -> 4.8
+                TravelMode.BICYCLE -> 16.0
+            }
+            (landDistanceMeters / 1000.0) / speedKmh * 3600.0
+        }
+        val totalMin = (seconds / 60.0).toInt().coerceAtLeast(1)
+        if (totalMin >= 60) {
+            val hrs = totalMin / 60
+            val mins = totalMin % 60
+            if (mins > 0) "$hrs hr $mins min" else "$hrs hr"
+        } else {
+            "$totalMin min"
+        }
+    }
+
+    val safeOriginName = originName.replace("'", "\\'").replace("\"", "\\\"").replace("\n", " ")
+    val safeDestName = destName.replace("'", "\\'").replace("\"", "\\\"").replace("\n", " ")
+
+    // Generate HTML for Leaflet Map with real road routing and Google Maps styling
     fun generateMapHtml(tileType: MapTileType): String {
         return """
             <!DOCTYPE html>
@@ -146,35 +169,101 @@ fun GoogleMapsStyleView(
                         margin: 0; padding: 0; width: 100%; height: 100%;
                         background: #0B1626; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                     }
-                    .custom-badge {
-                        background: #0F172A;
-                        color: #00E5FF;
-                        border: 1px solid #00E5FF;
-                        border-radius: 12px;
-                        padding: 3px 8px;
-                        font-size: 11px;
-                        font-weight: bold;
-                        white-space: nowrap;
-                        box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+                    /* Google Maps style Destination Callout */
+                    .gmaps-dest-tooltip {
+                        background: #FFFFFF !important;
+                        color: #202124 !important;
+                        border: none !important;
+                        border-radius: 8px !important;
+                        padding: 5px 9px !important;
+                        box-shadow: 0 4px 14px rgba(0,0,0,0.45) !important;
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
                     }
-                    .road-badge {
-                        background: #1E3A8A;
-                        color: #60A5FA;
-                        border: 1px solid #3B82F6;
-                        border-radius: 12px;
-                        padding: 3px 8px;
-                        font-size: 11px;
-                        font-weight: bold;
-                        white-space: nowrap;
-                        box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+                    .gmaps-dest-tooltip::before {
+                        border-top-color: #FFFFFF !important;
                     }
-                    .leaflet-popup-content-wrapper {
+                    .gmaps-dest-title {
+                        color: #EA4335;
+                        font-size: 10px;
+                        font-weight: 800;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                        display: flex;
+                        align-items: center;
+                        gap: 3px;
+                    }
+                    .gmaps-dest-name {
+                        color: #1A1A1A;
+                        font-size: 12px;
+                        font-weight: 700;
+                        max-width: 170px;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        line-height: 1.25;
+                    }
+                    .gmaps-dest-meta {
+                        display: flex;
+                        align-items: center;
+                        gap: 5px;
+                        margin-top: 2px;
+                        font-size: 10.5px;
+                    }
+                    .gmaps-eta-text {
+                        color: #137333;
+                        font-weight: 800;
+                    }
+                    .gmaps-dist-text {
+                        color: #5F6368;
+                        font-weight: 600;
+                    }
+                    /* Google Maps Origin Puck */
+                    .gmaps-origin-tooltip {
+                        background: #1A73E8 !important;
+                        color: #FFFFFF !important;
+                        border: none !important;
+                        border-radius: 6px !important;
+                        padding: 3px 8px !important;
+                        font-size: 10px !important;
+                        font-weight: 700 !important;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+                    }
+                    .gmaps-origin-tooltip::before {
+                        border-top-color: #1A73E8 !important;
+                    }
+                    @keyframes gmaps-puck-pulse {
+                        0% { transform: scale(0.5); opacity: 0.9; }
+                        70% { transform: scale(1.8); opacity: 0.0; }
+                        100% { transform: scale(1.8); opacity: 0.0; }
+                    }
+                    .puck-pulse {
+                        position: absolute;
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 50%;
+                        background: rgba(66, 133, 244, 0.45);
+                        animation: gmaps-puck-pulse 2s infinite ease-out;
+                    }
+                    .puck-center {
+                        position: absolute;
+                        width: 16px;
+                        height: 16px;
+                        border-radius: 50%;
+                        background: #1A73E8;
+                        border: 3px solid #FFFFFF;
+                        box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+                    }
+                    /* Road Midpoint Badge */
+                    .gmaps-route-bubble {
                         background: #1E293B;
                         color: #FFFFFF;
-                        border-radius: 8px;
-                    }
-                    .leaflet-popup-tip {
-                        background: #1E293B;
+                        border: 1.5px solid #3B82F6;
+                        border-radius: 14px;
+                        padding: 3px 8px;
+                        font-size: 10px;
+                        font-weight: bold;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+                        white-space: nowrap;
                     }
                 </style>
             </head>
@@ -190,35 +279,63 @@ fun GoogleMapsStyleView(
                         maxZoom: 19
                     }).addTo(map);
 
+                    // 1. Google Maps Origin Marker (Blue pulsing puck)
                     var originIcon = L.divIcon({
-                        className: 'origin-marker',
-                        html: '<div style="background:#00E676; width:18px; height:18px; border-radius:50%; border:3px solid #FFFFFF; box-shadow:0 0 10px #00E676; display:flex; align-items:center; justify-content:center; color:#000; font-size:9px; font-weight:bold;">A</div>',
-                        iconSize: [24, 24],
-                        iconAnchor: [12, 12]
+                        className: 'gmaps-origin-container',
+                        html: '<div style="position:relative; width:28px; height:28px; display:flex; align-items:center; justify-content:center;">' +
+                              '<div class="puck-pulse"></div>' +
+                              '<div class="puck-center"></div>' +
+                              '</div>',
+                        iconSize: [28, 28],
+                        iconAnchor: [14, 14]
                     });
 
+                    // 2. Google Maps Destination Marker (Iconic Red Pin)
                     var destIcon = L.divIcon({
-                        className: 'dest-marker',
-                        html: '<div style="background:#FF3D00; width:18px; height:18px; border-radius:50%; border:3px solid #FFFFFF; box-shadow:0 0 10px #FF3D00; display:flex; align-items:center; justify-content:center; color:#FFF; font-size:9px; font-weight:bold;">B</div>',
-                        iconSize: [24, 24],
-                        iconAnchor: [12, 12]
+                        className: 'gmaps-dest-container',
+                        html: '<div style="position:relative; width:34px; height:44px; filter:drop-shadow(0 4px 6px rgba(0,0,0,0.55)); cursor:pointer;">' +
+                              '<svg viewBox="0 0 24 36" width="34" height="44">' +
+                              '<path fill="#EA4335" stroke="#B31412" stroke-width="0.8" d="M12 0C5.37 0 0 5.37 0 12c0 8.8 12 24 12 24s12-15.2 12-24c0-6.63-5.37-12-12-12z"/>' +
+                              '<circle fill="#FFFFFF" cx="12" cy="12" r="5"/>' +
+                              '<circle fill="#B31412" cx="12" cy="12" r="2.5"/>' +
+                              '</svg>' +
+                              '</div>',
+                        iconSize: [34, 44],
+                        iconAnchor: [17, 44],
+                        popupAnchor: [0, -44]
                     });
 
-                    var markerA = L.marker([$originLat, $originLng], {icon: originIcon}).addTo(map)
-                        .bindPopup("<b>Point A: $originName</b><br>Lat: $originLat, Lng: $originLng");
+                    var markerA = L.marker([$originLat, $originLng], {icon: originIcon}).addTo(map);
+                    markerA.bindTooltip('<div class="gmaps-origin-tooltip">🚩 $safeOriginName</div>', {
+                        permanent: true,
+                        direction: 'top',
+                        offset: [0, -16],
+                        className: 'gmaps-origin-tooltip'
+                    });
 
-                    var markerB = L.marker([$destLat, $destLng], {icon: destIcon}).addTo(map)
-                        .bindPopup("<b>Point B: $destName</b><br>Lat: $destLat, Lng: $destLng");
+                    var markerB = L.marker([$destLat, $destLng], {icon: destIcon}).addTo(map);
+                    // Google Maps style floating callout bubble directly above Destination
+                    markerB.bindTooltip(
+                        '<div class="gmaps-dest-title">📍 मंज़िल (Destination)</div>' +
+                        '<div class="gmaps-dest-name">$safeDestName</div>' +
+                        '<div class="gmaps-dest-meta"><span class="gmaps-eta-text">$etaString</span> • <span class="gmaps-dist-text">$formattedLand</span></div>',
+                        {
+                            permanent: true,
+                            direction: 'top',
+                            offset: [0, -42],
+                            className: 'gmaps-dest-tooltip'
+                        }
+                    );
 
-                    // Aerial straight line (Cyan dashed)
+                    // Aerial straight line (Cyan dashed line)
                     var aerialLine = L.polyline([
                         [$originLat, $originLng],
                         [$destLat, $destLng]
                     ], {
                         color: '#00E5FF',
-                        weight: 3,
-                        dashArray: '6, 6',
-                        opacity: 0.75
+                        weight: 2.5,
+                        dashArray: '5, 6',
+                        opacity: 0.65
                     }).addTo(map);
 
                     var roadLayerGroup = null;
@@ -227,17 +344,17 @@ fun GoogleMapsStyleView(
                         if (roadLayerGroup) {
                             map.removeLayer(roadLayerGroup);
                         }
-                        // Casing outer border (Dark Blue)
+                        // Outer casing (Google Maps route border)
                         var casing = L.geoJSON(geoJsonData, {
                             style: {
-                                color: '#1E3A8A',
+                                color: '#1A56DB',
                                 weight: 7,
                                 opacity: 0.95,
                                 lineCap: 'round',
                                 lineJoin: 'round'
                             }
                         });
-                        // Core road line (Google Maps vibrant blue)
+                        // Core road line (Google Maps vibrant navigation blue)
                         var coreLine = L.geoJSON(geoJsonData, {
                             style: {
                                 color: '#3B82F6',
@@ -249,7 +366,7 @@ fun GoogleMapsStyleView(
                         });
 
                         roadLayerGroup = L.featureGroup([casing, coreLine]).addTo(map);
-                        map.fitBounds(roadLayerGroup.getBounds().pad(0.18));
+                        map.fitBounds(roadLayerGroup.getBounds().pad(0.22));
                     }
 
                     var routeData = $geoJsonString;
@@ -282,30 +399,30 @@ fun GoogleMapsStyleView(
                             [$destLat, $destLng]
                         ], {
                             color: '#3B82F6',
-                            weight: 4,
-                            opacity: 0.8
+                            weight: 4.5,
+                            opacity: 0.9
                         }).addTo(map);
                         var bounds = new L.featureGroup([markerA, markerB, fallbackRoad]);
-                        map.fitBounds(bounds.getBounds().pad(0.2));
+                        map.fitBounds(bounds.getBounds().pad(0.22));
                     }
 
-                    // Midpoint badges
+                    // Route midpoint badge
                     var centerLat = ($originLat + $destLat) / 2;
                     var centerLng = ($originLng + $destLng) / 2;
                     var badgeIcon = L.divIcon({
-                        className: 'custom-badge-container',
-                        html: '<div class="road-badge">🛣️ $formattedLand</div>',
-                        iconSize: [90, 24],
-                        iconAnchor: [45, 12]
+                        className: 'gmaps-route-bubble-container',
+                        html: '<div class="gmaps-route-bubble">🛣️ $formattedLand • $etaString</div>',
+                        iconSize: [120, 24],
+                        iconAnchor: [60, 12]
                     });
                     L.marker([centerLat, centerLng], {icon: badgeIcon}).addTo(map);
 
                     function fitRoute() {
                         if (roadLayerGroup) {
-                            map.fitBounds(roadLayerGroup.getBounds().pad(0.18));
+                            map.fitBounds(roadLayerGroup.getBounds().pad(0.22));
                         } else {
                             var g = new L.featureGroup([markerA, markerB]);
-                            map.fitBounds(g.getBounds().pad(0.2));
+                            map.fitBounds(g.getBounds().pad(0.22));
                         }
                     }
                     function zoomIn() { map.zoomIn(); }
@@ -351,64 +468,83 @@ fun GoogleMapsStyleView(
         )
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            // Top Bar
+            // Google Maps Style Top Destination Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
-                            .background(Color(0xFF3B82F6).copy(alpha = 0.25f), CircleShape),
+                            .size(32.dp)
+                            .background(Color(0xFFEA4335).copy(alpha = 0.2f), CircleShape)
+                            .border(1.dp, Color(0xFFEA4335), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Default.Map,
-                            contentDescription = null,
-                            tint = Color(0xFF3B82F6),
-                            modifier = Modifier.size(16.dp)
+                            Icons.Default.Place,
+                            contentDescription = "मंज़िल (Destination)",
+                            tint = Color(0xFFEA4335),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "मंज़िल (DESTINATION):",
+                                color = Color(0xFFFF8A80),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.5.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFF10B981).copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = etaString,
+                                    color = Color(0xFF34D399),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                         Text(
-                            text = "🗺️ सड़क व गली मैप (Street Route Map)",
+                            text = destName,
                             color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "वास्तविक मोड़, गलियों और सड़कों का सटीक मार्ग",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 10.sp
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Open in Google Maps button
+                    // Open in Google Maps navigation button
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF1E293B))
-                            .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                            .background(Color(0xFF1A73E8))
                             .clickable { openInGoogleMapsApp() }
-                            .padding(horizontal = 8.dp, vertical = 5.dp)
+                            .padding(horizontal = 9.dp, vertical = 6.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 Icons.Default.Navigation,
-                                contentDescription = "Google Maps में नेविगेट",
-                                tint = Color(0xFF00E5FF),
-                                modifier = Modifier.size(12.dp)
+                                contentDescription = "Google Maps में शुरू करें",
+                                tint = Color.White,
+                                modifier = Modifier.size(13.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Maps नेविगेट",
-                                color = Color(0xFF00E5FF),
-                                fontSize = 10.sp,
+                                text = "शुरू करें",
+                                color = Color.White,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -515,13 +651,76 @@ fun GoogleMapsStyleView(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Google Maps Navigation Green Maneuver Banner (Iconic turn-by-turn banner)
+            val firstStep = realRouteResult?.steps?.firstOrNull()
+            val upcomingInstruction = firstStep?.instruction ?: "गंतव्य की ओर बढ़ें (${realRouteResult?.summaryRoad ?: "मुख्य सड़क"})"
+            val upcomingDistance = firstStep?.let {
+                if (it.distanceMeters >= 1000) String.format(Locale.US, "%.1f km", it.distanceMeters / 1000)
+                else "${it.distanceMeters.toInt()} m"
+            } ?: formattedLand
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF0F9D58))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            Icons.Default.TurnRight,
+                            contentDescription = "Turn direction",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = upcomingInstruction,
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "मंज़िल: $destName",
+                                color = Color(0xFFE8F5E9),
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFF0B8043), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = upcomingDistance,
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Map Viewport Container
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (isExpanded) 380.dp else 240.dp)
+                    .height(if (isExpanded) 380.dp else 250.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .border(1.dp, Color(0xFF334155), RoundedCornerShape(12.dp))
             ) {
@@ -586,7 +785,7 @@ fun GoogleMapsStyleView(
                                 .background(Color(0xFF3B82F6), RoundedCornerShape(1.dp))
                         )
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text("सड़क रास्ता", color = Color(0xFF93C5FD), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Text("सड़क मार्ग", color = Color(0xFF93C5FD), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                     }
 
                     // Aerial straight line indicator
@@ -628,102 +827,158 @@ fun GoogleMapsStyleView(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Street Route Details Card (कौन से रास्ते/गलियों से होकर जा रहा है)
+            // Google Maps Navigation Bottom Overview Card
             val summaryText = realRouteResult?.summaryRoad?.ifBlank { null } ?: "मुख्य सड़क मार्ग"
             val totalSteps = realRouteResult?.steps?.size ?: 0
-            val durationMin = realRouteResult?.let { (it.durationSeconds / 60.0).toInt().coerceAtLeast(1) } ?: 0
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(Color(0xFF162235))
-                    .border(1.dp, Color(0xFF3B82F6).copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-                    .padding(10.dp)
+                    .border(1.dp, Color(0xFF3B82F6).copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                    .padding(12.dp)
             ) {
                 Column {
+                    // Row 1: Big Green ETA, Distance & Route Summary
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.Bottom
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Icon(
-                                Icons.Default.Route,
-                                contentDescription = null,
-                                tint = Color(0xFF60A5FA),
-                                modifier = Modifier.size(16.dp)
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text(
+                                text = etaString,
+                                color = Color(0xFF10B981),
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Column {
-                                Text(
-                                    text = "चुना गया मार्ग (Selected Route):",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 10.sp
-                                )
-                                Text(
-                                    text = summaryText,
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "($formattedLand)",
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
                         }
 
-                        // Duration Badge
-                        if (durationMin > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFF1E3A8A))
-                                    .padding(horizontal = 7.dp, vertical = 3.dp)
-                            ) {
-                                Text(
-                                    text = "~$durationMin मिनट",
-                                    color = Color(0xFF93C5FD),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                        // Aerial comparison pill
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF0F172A))
+                                .padding(horizontal = 7.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "✈️ सीधी: $formattedAerial",
+                                color = Color(0xFF00E5FF),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
+                    Text(
+                        text = "सबसे तेज़ मार्ग • वाया: $summaryText",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Detailed Length in meters & feet
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF0F172A))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "🛣️ सड़क दूरी: $formattedLand | ✈️ सीधी: $formattedAerial",
-                            color = Color(0xFF00E5FF),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
+                            text = "📏 कुल लम्बाई (Exact Length):",
+                            color = Color(0xFFFFD54F),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
+                        Text(
+                            text = "${GeoUtils.formatMeterLength(landDistanceMeters)} • ${GeoUtils.formatFeetLength(landDistanceMeters)}",
+                            color = Color.White,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
-                        // Toggle button for turn-by-turn street step details
-                        if (totalSteps > 0) {
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFF1E293B))
-                                    .clickable { showStepsList = !showStepsList }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = Color(0xFF24334A), thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Action buttons row: Big Start Button + Steps List Button + Fit Route
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Google Maps Start Navigation Button
+                        Box(
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF1A73E8))
+                                .clickable { openInGoogleMapsApp() }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Navigation,
+                                    contentDescription = "नेविगेट करें",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (showStepsList) "मोड़ छुपाएं" else "$totalSteps मोड़/गलियां देखें",
-                                    color = Color(0xFF60A5FA),
-                                    fontSize = 10.sp,
+                                    text = "Maps नेविगेशन शुरू करें",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
-                                Icon(
-                                    if (showStepsList) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                    contentDescription = null,
-                                    tint = Color(0xFF60A5FA),
-                                    modifier = Modifier.size(14.dp)
-                                )
+                            }
+                        }
+
+                        // Steps toggle button
+                        if (totalSteps > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF1E293B))
+                                    .border(1.dp, Color(0xFF334155), RoundedCornerShape(8.dp))
+                                    .clickable { showStepsList = !showStepsList }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = if (showStepsList) "मोड़ छुपाएं" else "$totalSteps मोड़ देखें",
+                                        color = Color(0xFF93C5FD),
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Icon(
+                                        if (showStepsList) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = null,
+                                        tint = Color(0xFF93C5FD),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                             }
                         }
                     }

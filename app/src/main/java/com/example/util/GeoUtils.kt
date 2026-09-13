@@ -187,6 +187,14 @@ object GeoUtils {
         }
     }
 
+    fun formatMeterLength(meters: Double): String {
+        return String.format(Locale.getDefault(), "%,.0f m", meters)
+    }
+
+    fun formatFeetLength(meters: Double): String {
+        return String.format(Locale.getDefault(), "%,.0f ft", meters * 3.28084)
+    }
+
     fun formatCoordinates(lat: Double, lng: Double): String {
         val latDir = if (lat >= 0) "N" else "S"
         val lngDir = if (lng >= 0) "E" else "W"

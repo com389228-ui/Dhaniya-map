@@ -1107,32 +1107,36 @@ fun RouteLocationsCard(
                 )
             }
 
-            // Point B (Destination)
+            // Point B (Destination - Google Maps Style)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
-                        .background(Color(0xFFFF3D00).copy(alpha = 0.2f), CircleShape),
+                        .size(34.dp)
+                        .background(Color(0xFFEA4335).copy(alpha = 0.22f), CircleShape)
+                        .border(1.5.dp, Color(0xFFEA4335), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.LocationOn,
-                        contentDescription = null,
-                        tint = Color(0xFFFF3D00),
-                        modifier = Modifier.size(16.dp)
+                        contentDescription = "Destination Pin",
+                        tint = Color(0xFFEA4335),
+                        modifier = Modifier.size(18.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "मंज़िल (Point B - Destination)",
-                        color = Color(0xFFFF8A80),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "मंज़िल (Point B - Destination)",
+                            color = Color(0xFFFF8A80),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 0.3.sp
+                        )
+                    }
                     Text(
                         text = destination?.name ?: "Chuna nahi gaya",
                         color = Color.White,
@@ -1148,6 +1152,14 @@ fun RouteLocationsCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    destination?.let {
+                        Text(
+                            text = GeoUtils.formatCoordinates(it.latitude, it.longitude),
+                            color = Color(0xFF64748B),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp
+                        )
+                    }
                 }
                 OutlinedButton(
                     onClick = onChangeDestinationClick,
@@ -1240,82 +1252,112 @@ fun DualDistanceHero(
                 )
             }
     ) {
-        // Aerial Card (Hawai Doori)
+        // #1 PRIMARY HERO CARD: Road / Land Distance (Google Maps Sadak Duri & Lambai)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("aerial_distance_card"),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2644)),
+                .testTag("land_distance_card"),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B2333)),
             shape = RoundedCornerShape(16.dp),
             border = CardDefaults.outlinedCardBorder().copy(
                 brush = Brush.horizontalGradient(
-                    if (isFixedMode) listOf(Color(0xFFFFD54F), Color(0xFFFF9100))
-                    else listOf(Color(0xFF00E5FF), Color(0xFF0288D1))
+                    if (isFixedMode) listOf(Color(0xFFFFD54F), Color(0xFFFF8F00))
+                    else listOf(Color(0xFFFFB300), Color(0xFF00E5FF))
                 )
             )
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
+                // Header Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
-                                .background(
-                                    if (isFixedMode) Color(0xFFFFD54F).copy(alpha = 0.2f)
-                                    else Color(0xFF00E5FF).copy(alpha = 0.2f),
-                                    CircleShape
-                                ),
+                                .size(34.dp)
+                                .background(Color(0xFFFFB300).copy(alpha = 0.2f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                Icons.Default.AirplanemodeActive,
-                                contentDescription = null,
-                                tint = if (isFixedMode) Color(0xFFFFD54F) else Color(0xFF00E5FF),
-                                modifier = Modifier.size(18.dp)
+                                Icons.Default.DirectionsCar,
+                                contentDescription = "सड़क मार्ग",
+                                tint = Color(0xFFFFB300),
+                                modifier = Modifier.size(19.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "सड़क मार्ग की दूरी (ROAD DISTANCE)",
+                                    color = Color(0xFFFFD54F),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
                             Text(
-                                text = "HAWAI DURI (AERIAL)",
-                                color = if (isFixedMode) Color(0xFFFFD54F) else Color(0xFF00E5FF),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                letterSpacing = 1.sp
-                            )
-                            Text(
-                                text = if (isFixedMode) "निश्चित सीधी रेखा (Fixed Point A ➔ B)" else "Seedhi Rekha / As The Crow Flies",
-                                color = Color(0xFF90CAF9),
-                                fontSize = 10.sp
+                                text = if (realRouteResult != null) {
+                                    "Google Maps रूट: ${realRouteResult.summaryRoad}"
+                                } else {
+                                    "Google Maps अनुसार सड़क लम्बाई (${String.format(Locale.US, "%.2fx", customRoadFactor)})"
+                                },
+                                color = Color(0xFFFFE082),
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
                     }
+
+                    // Lock / Fix Distance Toggle Pill
                     Box(
                         modifier = Modifier
-                            .background(Color(0xFF0B192E), RoundedCornerShape(20.dp))
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (isFixedMode) Color(0xFFFFD54F) else Color(0xFF1E293B)
+                            )
+                            .border(
+                                1.dp,
+                                if (isFixedMode) Color(0xFFFFD54F) else Color(0xFF475569),
+                                RoundedCornerShape(20.dp)
+                            )
+                            .clickable { onToggleFixMode() }
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = if (isFixedMode) "🔒 100% FIXED" else "📍 LIVE GPS",
-                            color = if (isFixedMode) Color(0xFFFFD54F) else Color(0xFF80DEEA),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (isFixedMode) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = null,
+                                tint = if (isFixedMode) Color(0xFF1E1E1E) else Color(0xFF94A3B8),
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isFixedMode) "🔒 100% फिक्स" else "🔓 फिक्स करें",
+                                color = if (isFixedMode) Color(0xFF1E1E1E) else Color(0xFFE2E8F0),
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // Main Big Distance Display
                 Row(
                     verticalAlignment = Alignment.Bottom,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = GeoUtils.formatDistanceValue(aerialMeters, selectedUnit),
+                        text = GeoUtils.formatDistanceValue(landMeters, selectedUnit),
                         color = Color.White,
                         fontSize = 38.sp,
                         fontWeight = FontWeight.Black,
@@ -1325,174 +1367,224 @@ fun DualDistanceHero(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = selectedUnit.shortLabel,
-                        color = if (isFixedMode) Color(0xFFFFD54F) else Color(0xFF00E5FF),
+                        color = Color(0xFFFFD54F),
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 6.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Alternative units summary
+                // Detailed Length Measurements (मीटर व फीट में स्पष्ट लम्बाई)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0F172A).copy(alpha = 0.6f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    if (selectedUnit != DistanceUnit.KILOMETERS) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "${GeoUtils.formatDistanceValue(aerialMeters, DistanceUnit.KILOMETERS)} km",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 11.sp
+                            text = "📏 वास्तविक लम्बाई:",
+                            color = Color(0xFFFFE082),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "${GeoUtils.formatMeterLength(landMeters)} • ${GeoUtils.formatFeetLength(landMeters)}",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                    if (selectedUnit != DistanceUnit.MILES) {
+
+                    if (isFixedMode) {
                         Text(
-                            text = "${GeoUtils.formatDistanceValue(aerialMeters, DistanceUnit.MILES)} mi",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 11.sp
+                            text = "स्थिर (अपरिवर्तनीय)",
+                            color = Color(0xFFFFD54F),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    } else {
+                        Text(
+                            text = "लाइव GPS",
+                            color = Color(0xFF64748B),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     }
-                    if (selectedUnit != DistanceUnit.NAUTICAL_MILES) {
-                        Text(
-                            text = "${GeoUtils.formatDistanceValue(aerialMeters, DistanceUnit.NAUTICAL_MILES)} NM",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 11.sp
-                        )
-                    }
+                }
+
+                if (realRouteResult != null && realRouteResult.steps.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "🎯 Google Maps के ${realRouteResult.steps.size} मोड़ व गलियों की सटीक दूरी",
+                        color = Color(0xFF93C5FD),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Land / Road Route Card (Zameeni Doori)
+        // #2 SECONDARY CARD: Aerial Straight Line Distance (Hawai Doori)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("land_distance_card"),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2430)),
+                .testTag("aerial_distance_card"),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2644)),
             shape = RoundedCornerShape(16.dp),
-            border = CardDefaults.outlinedCardBorder().copy(brush = Brush.horizontalGradient(listOf(Color(0xFFFFB300), Color(0xFFFF6F00))))
+            border = CardDefaults.outlinedCardBorder().copy(
+                brush = Brush.horizontalGradient(
+                    listOf(Color(0xFF00E5FF).copy(alpha = 0.6f), Color(0xFF0288D1).copy(alpha = 0.6f))
+                )
+            )
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(14.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f, fill = false)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(30.dp)
-                                .background(Color(0xFFFFB300).copy(alpha = 0.2f), CircleShape),
+                                .size(28.dp)
+                                .background(Color(0xFF00E5FF).copy(alpha = 0.18f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                Icons.Default.DirectionsCar,
-                                contentDescription = null,
-                                tint = Color(0xFFFFB300),
-                                modifier = Modifier.size(17.dp)
+                                Icons.Default.AirplanemodeActive,
+                                contentDescription = "हवाई सीधी रेखा",
+                                tint = Color(0xFF00E5FF),
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = if (realRouteResult != null) "सड़क व गली मार्ग" else "GOOGLE MAPS SADAK DURI",
-                                color = Color(0xFFFFB300),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.ExtraBold,
+                                text = "हवाई सीधी रेखा (AERIAL STRAIGHT LINE)",
+                                color = Color(0xFF00E5FF),
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.5.sp
                             )
                             Text(
-                                text = if (realRouteResult != null) "वाया: ${realRouteResult.summaryRoad}" else "Google Maps Anusaar (${String.format(Locale.US, "%.2fx", customRoadFactor)})",
-                                color = Color(0xFFFFE082),
-                                fontSize = 10.sp,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                text = "सीधी रेखा (As The Crow Flies) - बिना मोड़",
+                                color = Color(0xFF90CAF9),
+                                fontSize = 9.5.sp
                             )
                         }
                     }
-                    if (realRouteResult != null) {
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF1E3A8A), RoundedCornerShape(20.dp))
-                                .padding(horizontal = 7.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = "🎯 सटीक गली मार्ग",
-                                color = Color(0xFF93C5FD),
-                                fontSize = 9.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    } else {
-                        val detourPct = ((customRoadFactor - 1.0) * 100).toInt()
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF2C1E0A), RoundedCornerShape(20.dp))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = "+$detourPct% Maps match",
-                                color = Color(0xFFFFD54F),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+
+                    // Value Pill
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            text = GeoUtils.formatDistanceValue(aerialMeters, selectedUnit),
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = selectedUnit.shortLabel,
+                            color = Color(0xFF00E5FF),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(bottom = 2.dp)
+                        )
                     }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = GeoUtils.formatDistanceValue(landMeters, selectedUnit),
-                        color = Color.White,
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.SansSerif
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = selectedUnit.shortLabel,
-                        color = Color(0xFFFFB300),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
-                if (realRouteResult != null && realRouteResult.steps.isNotEmpty()) {
+
+                // Aerial length in meters & feet + Comparison
+                val diffMeters = (landMeters - aerialMeters).coerceAtLeast(0.0)
+                val detourPct = if (aerialMeters > 0) ((diffMeters / aerialMeters) * 100).toInt() else 0
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = "📍 ${realRouteResult.steps.size} मोड़ व गलियों के हिसाब से दूरी",
-                        color = Color(0xFFFFD54F),
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Medium
+                        text = "हवाई लम्बाई: ${GeoUtils.formatMeterLength(aerialMeters)} • ${GeoUtils.formatFeetLength(aerialMeters)}",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.sp
                     )
-                } else {
                     Text(
-                        text = "सड़क घुमाव: +${((customRoadFactor - 1.0) * 100).toInt()}% अतिरिक्त दूरी",
-                        color = Color(0xFFFFE082),
-                        fontSize = 11.sp,
+                        text = "सड़क मार्ग +${GeoUtils.formatDistanceValue(diffMeters, selectedUnit)} ${selectedUnit.shortLabel} (+${detourPct}%) लंबा",
+                        color = Color(0xFFFFD54F),
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
             }
         }
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // #3 Quick Units Length Bar (सड़क लम्बाई के विभिन्न मात्रक - Tap any to switch)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val units = listOf(
+                DistanceUnit.KILOMETERS,
+                DistanceUnit.METERS,
+                DistanceUnit.MILES,
+                DistanceUnit.FEET
+            )
+            units.forEach { unit ->
+                val isSelected = unit == selectedUnit
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isSelected) Color(0xFFFFD54F).copy(alpha = 0.2f)
+                            else Color(0xFF0F172A)
+                        )
+                        .border(
+                            1.dp,
+                            if (isSelected) Color(0xFFFFD54F) else Color(0xFF1E293B),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { onCycleUnit() }
+                        .padding(vertical = 6.dp, horizontal = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = GeoUtils.formatDistanceValue(landMeters, unit),
+                            color = if (isSelected) Color(0xFFFFD54F) else Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = unit.shortLabel,
+                            color = if (isSelected) Color(0xFFFFD54F) else Color(0xFF94A3B8),
+                            fontSize = 9.sp
+                        )
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Gesture Tips Bar
+        // Gesture & Tip Banner
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF0F172A))
+                .background(Color(0xFF0B1320))
                 .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1500,11 +1592,11 @@ fun DualDistanceHero(
                 Icons.Default.TouchApp,
                 contentDescription = null,
                 tint = Color(0xFF00E5FF),
-                modifier = Modifier.size(14.dp)
+                modifier = Modifier.size(13.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "जेस्चर टिप्स: 👆 2-टैप = फिक्स लॉक | 👈👉 स्वाइप = यूनिट बदलें | 📋 लॉन्ग-प्रेस = कॉपी",
+                text = "टिप्स: 👆 डबल-टैप = फिक्स लॉक | 👈👉 स्वाइप = मात्रक बदलें | 📋 देर तक दबाएं = कॉपी",
                 color = Color(0xFF94A3B8),
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Medium

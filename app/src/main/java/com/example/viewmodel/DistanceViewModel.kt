@@ -93,6 +93,7 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
     private var locationTrackingJob: Job? = null
     private var simulationJob: Job? = null
     private var previousDistance: Double? = null
+    private var lastCalculationLocation: Location? = null
 
     init {
         // Start listening to compass orientation
@@ -186,7 +187,7 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
     fun updateCurrentLocation(location: Location) {
         val state = _uiState.value
         val newCalc = if (state.isFixedDistanceMode && state.fixedOrigin != null && state.destination != null) {
-            // Keep fixed distance between Point A and Point B
+            // Keep fixed distance between Point A and Point B (100% frozen, no GPS fluctuation)
             val fixedLoc = Location("fixed").apply {
                 latitude = state.fixedOrigin.latitude
                 longitude = state.fixedOrigin.longitude
@@ -195,7 +196,20 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
             }
             computeCalculation(fixedLoc, state.destination, state.deviceAzimuth)
         } else if (state.destination != null) {
-            computeCalculation(location, state.destination, state.deviceAzimuth)
+            // Anti-jitter filter: if phone is stationary (< 1.2 m/s) and moved less than 5m, don't fluctuate distance
+            val lastLoc = lastCalculationLocation
+            val movedMeters = if (lastLoc != null) location.distanceTo(lastLoc) else Float.MAX_VALUE
+            if (lastLoc != null && movedMeters < 5.0f && location.speed < 1.2f && state.calculation != null) {
+                // Keep the exact same distance calculation, only update relative compass bearing and speed
+                val rel = (state.calculation.bearingDegrees - state.deviceAzimuth + 360f) % 360f
+                state.calculation.copy(
+                    relativeBearingDegrees = rel,
+                    speedKmH = location.speed * 3.6f
+                )
+            } else {
+                lastCalculationLocation = location
+                computeCalculation(location, state.destination, state.deviceAzimuth)
+            }
         } else null
 
         val delta = if (newCalc != null && previousDistance != null) {
@@ -235,6 +249,7 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
         }
 
         if (originLoc != null) {
+            lastCalculationLocation = originLoc
             val newCalc = computeCalculation(originLoc, dest, state.deviceAzimuth)
             _uiState.update { it.copy(calculation = newCalc) }
             fetchStreetRoute(originLoc.latitude, originLoc.longitude, dest.latitude, dest.longitude)
@@ -464,7 +479,15 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setDestination(dest: SearchResult) {
-        _uiState.update { it.copy(destination = dest, searchQuery = "") }
+        lastCalculationLocation = null
+        _uiState.update {
+            it.copy(
+                destination = dest,
+                searchQuery = "",
+                realRouteResult = null,
+                statusMessage = "📍 मंज़िल: ${dest.name} (सड़क लम्बाई नापी जा रही है...)"
+            )
+        }
         recalculateDistance()
 
         // Save to Room history
@@ -481,12 +504,14 @@ class DistanceViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setOrigin(origin: SearchResult) {
+        lastCalculationLocation = null
         _uiState.update {
             it.copy(
                 fixedOrigin = origin,
                 isFixedDistanceMode = true,
                 searchQuery = "",
-                statusMessage = "Point A चुना गया: ${origin.name}"
+                realRouteResult = null,
+                statusMessage = "🔒 Point A फिक्स सेट हुआ: ${origin.name}"
             )
         }
         recalculateDistance()
